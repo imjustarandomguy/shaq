@@ -12,7 +12,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-import pyaudio
+import pyaudiowpatch as pyaudio
 from pydub import AudioSegment
 from rich import progress
 from rich.console import Console
@@ -28,8 +28,6 @@ logging.basicConfig(
 
 _DEFAULT_CHUNK_SIZE = 1024
 _FORMAT = pyaudio.paInt16
-_DEFAULT_CHANNELS = 1
-_DEFAULT_SAMPLE_RATE = 16000
 _DEFAULT_DURATION = 10
 
 logger = logging.getLogger(__name__)
@@ -74,15 +72,43 @@ def _pyaudio() -> Iterator[pyaudio.PyAudio]:
 
 def _listen(console: Console, args: argparse.Namespace) -> bytearray:
     with _pyaudio() as p, BytesIO() as io, wave.open(io, "wb") as wav:
+        try:
+            # Get default WASAPI info
+            wasapi_info = p.get_host_api_info_by_type(pyaudio.paWASAPI)
+        except OSError:
+            console.print("Looks like WASAPI is not available on the system. Exiting...")
+            exit()
+
+        # Get default WASAPI speakers
+        default_speakers = p.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
+
+        if not default_speakers["isLoopbackDevice"]:
+            for loopback in p.get_loopback_device_info_generator():
+                """
+                Try to find loopback device with same name(and [Loopback suffix]).
+                Unfortunately, this is the most adequate way at the moment.
+                """
+                if default_speakers["name"] in loopback["name"]:
+                    default_speakers = loopback
+                    break
+            else:
+                console.print("Default loopback output device not found.\n\nRun `python -m pyaudiowpatch` to check available devices.\nExiting...\n")
+                exit()
+
+        console.print(f"Listening from: {default_speakers['name']}")
+
+        nb_channels = default_speakers["maxInputChannels"]
+        sample_rate = int(default_speakers["defaultSampleRate"])
+
         # Use the same parameters as shazamio uses internally for audio
         # normalization, to reduce unnecessary transcoding.
-        wav.setnchannels(args.channels)
+        wav.setnchannels(nb_channels)
         wav.setsampwidth(p.get_sample_size(_FORMAT))
-        wav.setframerate(args.sample_rate)
+        wav.setframerate(sample_rate)
 
-        stream = p.open(format=_FORMAT, channels=args.channels, rate=args.sample_rate, input=True)
+        stream = p.open(format=_FORMAT, channels=nb_channels, rate=sample_rate, input=True, input_device_index=default_speakers["index"])
         for _ in progress.track(
-            range(0, args.sample_rate // args.chunk_size * args.duration),
+            range(0, sample_rate // args.chunk_size * args.duration),
             description="shaq is listening...",
             console=console,
         ):
@@ -143,19 +169,6 @@ def _parser() -> argparse.ArgumentParser:
         type=int,
         default=_DEFAULT_CHUNK_SIZE,
         help="read from the microphone in chunks of this size; only affects --listen",
-    )
-    advanced_group.add_argument(
-        "--channels",
-        type=int,
-        choices=(1, 2),
-        default=_DEFAULT_CHANNELS,
-        help="the number of channels to use; only affects --listen",
-    )
-    advanced_group.add_argument(
-        "--sample-rate",
-        type=int,
-        default=_DEFAULT_SAMPLE_RATE,
-        help="the sample rate to use; only affects --listen",
     )
     return parser
 
