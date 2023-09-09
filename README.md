@@ -27,7 +27,7 @@ sudo apt install -y portaudio19-dev
 
 ## Usage
 
-Detect by listening to the system microphone:
+Detect by listening to the default system output device using WASAPI loopback:
 
 ```bash
 # shaq listens for 10 seconds by default
