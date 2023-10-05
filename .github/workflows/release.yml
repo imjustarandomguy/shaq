@@ -20,7 +20,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - uses: actions/setup-python@v4.7.0
+    - uses: actions/setup-python@v4.7.1
       with:
         python-version-file: pyproject.toml
         cache-dependency-path: pyproject.toml
@@ -36,7 +36,7 @@ jobs:
       uses: pypa/gh-action-pypi-publish@v1.8.10
 
     - name: sign
-      uses: sigstore/gh-action-sigstore-python@v2.0.1
+      uses: sigstore/gh-action-sigstore-python@v2.1.0
       with:
         inputs: ./dist/*.tar.gz ./dist/*.whl
         release-signing-artifacts: true
